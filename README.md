@@ -1,6 +1,8 @@
-# Reproducer of a Problem with `spring.jpa.open-in-view`
+# Reproducer of an unexpected issue with `spring.jpa.open-in-view` and `JDBCTemplate`
 
 This repo is a minimal Spring Boot app to reproduce an issue I had in a real application with `spring.jpa.open-in-view` set to `true` (which is the default if the Spring Boot JPA Starter is in the classpath).
+
+## The app
 
 The `Controller` has these endpoints:
 
@@ -9,6 +11,8 @@ The `Controller` has these endpoints:
 
 The application is configured with a database connection pool size of 5 and with `spring.jpa.open-in-view=true` (see in `application.yml`).
 
+
+## The issue
 After starting the app with `./gradlew bootrun`, you can run:
 
 1. `./data-jdbc.sh` to hit the first endpoint, and
@@ -20,13 +24,21 @@ The first endpoint will work fine, but the requests to the second endpoint will 
 
 When you set `spring.jpa.open-in-view` to `false`, or increase the pool size to 6, the second endpoint will also work fine.
 
+## The explanation
+
+I'm happy to have this analysis corrected by people smarter than me :).
+
 It seems that with the combination of:
 * `spring.jpa.open-in-view=true`,
 * a database query via `JDBCTemplate`, and 
 * a database query via a Spring Data repository in the same request 
 
-a thread requires 2 database connections instead of one (which I would have expected).
+a thread requires 2 database connections instead of one, which was a bit surprising to me.
 
-My guess is that `JDBCTemplate` doesn't use the database connection that is reserved for the thread via the `open-in-view` pattern, but instead tries to get its own connection from the pool. Since each of the 5 threads already holds a connection for the `open-in-view` pattern, `JDBCTemplate` waits for a connection to be freed. That doesn't happen, because all 5 available connections are busy and `open-in-view` only frees a connection when the thread has done its work. The threads have effectively deadlocked over the connection resource.
+One database connection is reserved for the thread by `spring.jpa.open-in-view`. This connection is used by the Spring Data queries.
 
-Happy to have the above analysis corrected by people smarter than me :).
+The `JDBCTemplate` queries, however, are not using the thread's database connection, but trying to get their own connection from the pool.
+
+Since all 5 connections from the pool are already reserved for the 5 concurrent threads, each thread is waiting for a connection that would only be freed if one of threads completes, so all threads ultimately fail after the connection timeout.
+
+The threads have effectively deadlocked over the connection resource.

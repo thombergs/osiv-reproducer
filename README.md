@@ -22,7 +22,7 @@ with 5 concurrent requests each.
 
 The first endpoint will work fine, but the requests to the second endpoint will fail because they're waiting for database connections that are not available.
 
-When you set `spring.jpa.open-in-view` to `false`, or increase the pool size to 6, the second endpoint will also work fine.
+When you set `spring.jpa.open-in-view` to `false`, or increase the pool size to 6, or add the `@Transactional` annotation to the controller, the second endpoint will also work fine.
 
 ## The explanation
 
